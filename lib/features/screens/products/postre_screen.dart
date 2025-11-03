@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../models/General_models.dart' as GeneralModels;
-import '../../services/donas_api_services.dart'; // ← Usar el servicio unificado
-import 'Detail/PostresDetailScreen.dart';
-import '../../models/product_model.dart';
+import '../../services/donas_api_services.dart';
+import '../../services/cart_services.dart';
+import '../../models/cart_models.dart';
 
 class PostreScreen extends StatefulWidget {
   final String categoryTitle;
@@ -21,6 +22,15 @@ class _PostreScreenState extends State<PostreScreen> {
   List<GeneralModels.ProductModel> filteredProductos = [];
   bool isLoading = true;
   String? errorMessage;
+
+  // ✅ FUNCIÓN PARA FORMATEAR PRECIOS CON PUNTOS DE MIL
+  String formatPrice(double price) {
+    final priceStr = price.toStringAsFixed(0);
+    return priceStr.replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (Match m) => '${m[1]}.',
+    );
+  }
 
   @override
   void initState() {
@@ -86,11 +96,36 @@ class _PostreScreenState extends State<PostreScreen> {
     }
   }
 
-  void _navigateToDetail(ProductModel producto) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => PostreDetailScreen(product: producto),
+  // ✅ FUNCIÓN PARA AGREGAR AL CARRITO DIRECTAMENTE
+  void _addToCart(GeneralModels.ProductModel producto) {
+    final cartService = Provider.of<CartService>(context, listen: false);
+    
+    // Crear configuración básica para el producto
+    final config = ObleaConfiguration()
+      ..tipoOblea = producto.nombreProducto
+      ..precio = producto.precioProducto
+      ..ingredientesPersonalizados = {
+        'Producto': producto.nombreProducto,
+        'Categoría': producto.nombreCategoria ?? 'Postre',
+      };
+
+    // Agregar al carrito
+    cartService.addToCart(
+      producto: producto,
+      cantidad: 1,
+      configuraciones: [config],
+    );
+
+    // Mostrar mensaje de éxito
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${producto.nombreProducto} agregado al carrito'),
+        backgroundColor: Colors.green,
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
       ),
     );
   }
@@ -105,74 +140,73 @@ class _PostreScreenState extends State<PostreScreen> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
       ),
-      child: InkWell(
-        onTap: () => _navigateToDetail(ProductModel.fromBackendJson(producto)),
-        borderRadius: BorderRadius.circular(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              flex: 3,
-              child: ClipRRect(
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(20)),
-                child: _buildProductImage(imagen),
-              ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            flex: 3,
+            child: ClipRRect(
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(20)),
+              child: _buildProductImage(imagen),
             ),
-            Expanded(
-              flex: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        nombre,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black87,
-                        ),
-                        textAlign: TextAlign.center,
+          ),
+          Expanded(
+            flex: 2,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Flexible(
+                    child: Text(
+                      nombre,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  if (precio > 0) ...[
+                    Text(
+                      '\$${formatPrice(precio)}',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.pink,
                       ),
                     ),
                     const SizedBox(height: 8),
-                    if (precio > 0) ...[
-                      Text(
-                        '\$${precio.toStringAsFixed(0)}',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.pink,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                    ],
-                    Container(
+                  ],
+                  // ✅ BOTÓN PARA AGREGAR AL CARRITO DIRECTAMENTE
+                  ElevatedButton.icon(
+                    onPressed: () => _addToCart(producto),
+                    icon: const Icon(Icons.add_shopping_cart, size: 16),
+                    label: const Text(
+                      'Agregar al carrito',
+                      style: TextStyle(fontSize: 16),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.pinkAccent,
+                      foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.pinkAccent.withOpacity(0.1),
+                          horizontal: 20, vertical: 10),
+                      shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(15),
                       ),
-                      child: const Text(
-                        'Personalizable',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.deepOrangeAccent,
-                        ),
-                      ),
+                      minimumSize: const Size(0, 30),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -188,13 +222,13 @@ class _PostreScreenState extends State<PostreScreen> {
               Icon(
                 Icons.cake,
                 size: 50,
-                color: Colors.deepOrangeAccent,
+                color: Colors.pinkAccent,
               ),
               SizedBox(height: 8),
               Text(
                 'Postres',
                 style: TextStyle(
-                  color: Colors.deepOrangeAccent,
+                  color: Colors.pinkAccent,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -215,7 +249,7 @@ class _PostreScreenState extends State<PostreScreen> {
                 ? loadingProgress.cumulativeBytesLoaded /
                     loadingProgress.expectedTotalBytes!
                 : null,
-            color: Colors.deepOrangeAccent,
+            color: Colors.pinkAccent,
             strokeWidth: 2,
           ),
         );
@@ -278,7 +312,7 @@ class _PostreScreenState extends State<PostreScreen> {
             icon: const Icon(Icons.refresh),
             label: const Text('Reintentar'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.deepOrangeAccent,
+              backgroundColor: Colors.pinkAccent,
               foregroundColor: Colors.white,
               padding:
                   const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -304,7 +338,7 @@ class _PostreScreenState extends State<PostreScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFFFF5F0),
       appBar: AppBar(
-        backgroundColor: Colors.deepOrangeAccent,
+        backgroundColor: Colors.pinkAccent,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
@@ -334,7 +368,7 @@ class _PostreScreenState extends State<PostreScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   CircularProgressIndicator(
-                    color: Colors.deepOrangeAccent,
+                    color: Colors.pinkAccent,
                     strokeWidth: 3,
                   ),
                   SizedBox(height: 16),
@@ -382,30 +416,30 @@ class _PostreScreenState extends State<PostreScreen> {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(30),
-                        borderSide: const BorderSide(color: Colors.deepOrangeAccent, width: 2),
+                        borderSide: const BorderSide(color: Colors.pinkAccent, width: 2),
                       ),
                     ),
                   ),
                 ),
                 
-                // Banner informativo
+                // ✅ NUEVO BANNER INFORMATIVO
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.deepOrange[50],
+                    color: Colors.pink[50],
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.deepOrange[200]!),
+                    border: Border.all(color: Colors.pink[200]!),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.info_outline, color: Colors.deepOrange[600], size: 20),
+                      Icon(Icons.shopping_cart_checkout, color: Colors.pink[600], size: 20),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Toca cualquier producto para personalizarlo',
+                          'Haz clic en "Agregar al carrito" para añadir productos',
                           style: TextStyle(
-                            color: Colors.deepOrange[700],
+                            color: Colors.pink[700],
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
                           ),
@@ -423,7 +457,7 @@ class _PostreScreenState extends State<PostreScreen> {
                         ? _buildEmptyState()
                         : RefreshIndicator(
                             onRefresh: _fetchProductos,
-                            color: Colors.deepOrangeAccent,
+                            color: Colors.pinkAccent,
                             child: GridView.builder(
                               physics: const AlwaysScrollableScrollPhysics(
                                 parent: BouncingScrollPhysics(),
@@ -433,7 +467,7 @@ class _PostreScreenState extends State<PostreScreen> {
                                 crossAxisCount: 2,
                                 crossAxisSpacing: 16,
                                 mainAxisSpacing: 16,
-                                childAspectRatio: 0.68,
+                                childAspectRatio: 0.75, // Ajustado para el botón
                               ),
                               itemBuilder: (context, index) {
                                 return _buildCard(filteredProductos[index]);

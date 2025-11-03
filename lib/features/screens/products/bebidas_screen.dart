@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import '../../models/General_models.dart' as GeneralModels;
 import '../../services/donas_api_services.dart';
 import '../../services/cart_services.dart';
-import '../cart_screen.dart';
+import '../../models/cart_models.dart';
 
 class BebidasScreen extends StatefulWidget {
   final String categoryTitle;
@@ -23,6 +23,15 @@ class _BebidasScreenState extends State<BebidasScreen> {
   bool isLoading = true;
   String? errorMessage;
 
+  // ✅ FUNCIÓN PARA FORMATEAR PRECIOS CON PUNTOS DE MIL
+  String formatPrice(double price) {
+    final priceStr = price.toStringAsFixed(0);
+    return priceStr.replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (Match m) => '${m[1]}.',
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -37,6 +46,7 @@ class _BebidasScreenState extends State<BebidasScreen> {
         errorMessage = null;
       });
 
+      // Obtener productos por categoría ID 1 (Bebidas)
       List<GeneralModels.ProductModel> productos =
           await _apiService.obtenerProductosPorCategoriaId(1);
 
@@ -52,7 +62,7 @@ class _BebidasScreenState extends State<BebidasScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(errorMessage!),
-            backgroundColor: Colors.redAccent,
+            backgroundColor: Colors.pinkAccent,
             action: SnackBarAction(
               label: 'Reintentar',
               textColor: Colors.white,
@@ -86,13 +96,36 @@ class _BebidasScreenState extends State<BebidasScreen> {
     }
   }
 
+  // ✅ FUNCIÓN PARA AGREGAR AL CARRITO DIRECTAMENTE
   void _addToCart(GeneralModels.ProductModel producto) {
+    final cartService = Provider.of<CartService>(context, listen: false);
+    
+    // Crear configuración básica para el producto
+    final config = ObleaConfiguration()
+      ..tipoOblea = producto.nombreProducto
+      ..precio = producto.precioProducto
+      ..ingredientesPersonalizados = {
+        'Producto': producto.nombreProducto,
+        'Categoría': producto.nombreCategoria ?? 'Bebida',
+      };
+
+    // Agregar al carrito
+    cartService.addToCart(
+      producto: producto,
+      cantidad: 1,
+      configuraciones: [config],
+    );
+
+    // Mostrar mensaje de éxito
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('${producto.nombreProducto} agregado al carrito'),
         backgroundColor: Colors.green,
         duration: const Duration(seconds: 2),
         behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
       ),
     );
   }
@@ -141,39 +174,32 @@ class _BebidasScreenState extends State<BebidasScreen> {
                   const SizedBox(height: 8),
                   if (precio > 0) ...[
                     Text(
-                      '\$${precio.toStringAsFixed(0)}',
+                      '\$${formatPrice(precio)}',
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: Colors.green,
+                        color: Colors.pink,
                       ),
                     ),
                     const SizedBox(height: 8),
                   ],
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () => _addToCart(producto),
-                      icon: const Icon(Icons.shopping_cart, size: 16),
-                      label: const Text(
-                        'Agregar al carrito',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
+                  // ✅ BOTÓN PARA AGREGAR AL CARRITO DIRECTAMENTE
+                  ElevatedButton.icon(
+                    onPressed: () => _addToCart(producto),
+                    icon: const Icon(Icons.add_shopping_cart, size: 16),
+                    label: const Text(
+                      'Agregar al carrito',
+                      style: TextStyle(fontSize: 16),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.pinkAccent,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(15),
                       ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.pinkAccent,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 10,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: 0,
-                      ),
+                      minimumSize: const Size(0, 30),
                     ),
                   ),
                 ],
@@ -310,7 +336,7 @@ class _BebidasScreenState extends State<BebidasScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFCE4EC),
+      backgroundColor: const Color(0xFFFFF5F0),
       appBar: AppBar(
         backgroundColor: Colors.pinkAccent,
         elevation: 0,
@@ -328,52 +354,12 @@ class _BebidasScreenState extends State<BebidasScreen> {
           ),
         ),
         actions: [
-          Consumer<CartService>(
-            builder: (context, cartService, child) {
-              return Stack(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.shopping_cart, color: Colors.white),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const CartScreen(),
-                        ),
-                      );
-                    },
-                    tooltip: 'Ver carrito',
-                  ),
-                  if (cartService.totalQuantity > 0)
-                    Positioned(
-                      right: 8,
-                      top: 8,
-                      child: Container(
-                        padding: const EdgeInsets.all(2),
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        constraints: const BoxConstraints(
-                          minWidth: 16,
-                          minHeight: 16,
-                        ),
-                        child: Text(
-                          '${cartService.totalQuantity}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
-          const SizedBox(width: 8),
+          if (!isLoading)
+            IconButton(
+              icon: const Icon(Icons.refresh, color: Colors.white),
+              onPressed: _fetchProductos,
+              tooltip: 'Actualizar productos',
+            ),
         ],
       ),
       body: isLoading
@@ -398,6 +384,7 @@ class _BebidasScreenState extends State<BebidasScreen> {
             )
           : Column(
               children: [
+                // Barra de búsqueda
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                   child: TextField(
@@ -435,6 +422,7 @@ class _BebidasScreenState extends State<BebidasScreen> {
                   ),
                 ),
                 
+                // ✅ BANNER INFORMATIVO
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   padding: const EdgeInsets.all(12),
@@ -445,13 +433,13 @@ class _BebidasScreenState extends State<BebidasScreen> {
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.shopping_cart_outlined, color: Colors.pink[700], size: 20),
+                      Icon(Icons.shopping_cart_checkout, color: Colors.pink[600], size: 20),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           'Haz clic en "Agregar al carrito" para añadir productos',
                           style: TextStyle(
-                            color: Colors.pink[900],
+                            color: Colors.pink[700],
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
                           ),
@@ -461,6 +449,7 @@ class _BebidasScreenState extends State<BebidasScreen> {
                   ),
                 ),
                 
+                // Lista/Grid de productos
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -478,7 +467,7 @@ class _BebidasScreenState extends State<BebidasScreen> {
                                 crossAxisCount: 2,
                                 crossAxisSpacing: 16,
                                 mainAxisSpacing: 16,
-                                childAspectRatio: 0.68,
+                                childAspectRatio: 0.75,
                               ),
                               itemBuilder: (context, index) {
                                 return _buildCard(filteredProductos[index]);

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../../models/General_models.dart' as GeneralModels;
+import '../../../services/cart_services.dart';
+import '../../../models/cart_models.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
@@ -27,6 +30,9 @@ class _CupcakeDetailScreenState extends State<CupcakeDetailScreen> {
     'Cobertura de chocolate',
   ];
 
+  bool cargandoRellenos = false;
+  bool cargandoToppings = false;
+
   double _precioTotal() => cantidad * widget.product.precioProducto;
 
   void _resetFormulario() {
@@ -45,35 +51,108 @@ class _CupcakeDetailScreenState extends State<CupcakeDetailScreen> {
   }
 
   Future<void> _cargarDatosDesdeAPI() async {
+    setState(() {
+      cargandoRellenos = true;
+      cargandoToppings = true;
+    });
+
     try {
+      // Cargar rellenos
       final rellenoResponse = await http.get(
-          Uri.parse('https://deliciasoft-backend.onrender.com/api/catalogo-rellenos'));
-      final toppingResponse = await http.get(
-          Uri.parse('https://deliciasoft-backend.onrender.com/api/catalogo-adiciones'));
-
-      if (rellenoResponse.statusCode == 200 && toppingResponse.statusCode == 200) {
+          Uri.parse('https://deliciasoft-backend-i6g9.onrender.com/api/catalogo-relleno'));
+      
+      if (rellenoResponse.statusCode == 200) {
         final List<dynamic> rellenoData = json.decode(rellenoResponse.body);
-        final List<dynamic> toppingData = json.decode(toppingResponse.body);
-
         setState(() {
           rellenosDisponibles = rellenoData
               .where((e) => e['estado'] == true)
-              .map<String>((e) => e['nombreRelleno']?.toString() ?? e['nombre']?.toString() ?? '')
+              .map<String>((e) => e['nombre']?.toString() ?? '')
               .where((name) => name.isNotEmpty)
               .toList();
-          
-          toppingsDisponibles = toppingData
-              .where((e) => e['estado'] == true)
-              .map<String>((e) => e['nombreAdicion']?.toString() ?? e['nombre']?.toString() ?? '')
-              .where((name) => name.isNotEmpty)
-              .toList();
+          cargandoRellenos = false;
         });
       } else {
-        debugPrint('Error en respuestas: ${rellenoResponse.statusCode} / ${toppingResponse.statusCode}');
+        debugPrint('Error al cargar rellenos: ${rellenoResponse.statusCode}');
+        setState(() => cargandoRellenos = false);
       }
     } catch (e) {
-      debugPrint('Error al cargar datos desde API: $e');
+      debugPrint('Error al cargar rellenos: $e');
+      setState(() => cargandoRellenos = false);
     }
+
+    try {
+      // Cargar toppings
+      final toppingResponse = await http.get(
+          Uri.parse('https://deliciasoft-backend-i6g9.onrender.com/api/catalogo-toppings'));
+
+      if (toppingResponse.statusCode == 200) {
+        final List<dynamic> toppingData = json.decode(toppingResponse.body);
+        setState(() {
+          toppingsDisponibles = toppingData
+              .where((e) => e['estado'] == true)
+              .map<String>((e) => e['nombre']?.toString() ?? '')
+              .where((name) => name.isNotEmpty)
+              .toList();
+          cargandoToppings = false;
+        });
+      } else {
+        debugPrint('Error al cargar toppings: ${toppingResponse.statusCode}');
+        setState(() => cargandoToppings = false);
+      }
+    } catch (e) {
+      debugPrint('Error al cargar toppings: $e');
+      setState(() => cargandoToppings = false);
+    }
+  }
+
+  // ✅ FUNCIÓN PARA AGREGAR AL CARRITO
+  void _agregarAlCarrito() {
+    final cartService = Provider.of<CartService>(context, listen: false);
+    
+    List<String> errores = [];
+
+    if (relleno.isEmpty) errores.add('Selecciona un relleno');
+    if (topping.isEmpty) errores.add('Selecciona un topping');
+    if (cobertura.isEmpty) errores.add('Selecciona una cobertura');
+
+    if (errores.isNotEmpty) {
+      _mostrarAlertaValidacion(errores);
+      return;
+    }
+
+    // Crear configuración para el cupcake personalizado
+    final config = ObleaConfiguration()
+      ..tipoOblea = 'Cupcake Personalizado'
+      ..precio = widget.product.precioProducto
+      ..ingredientesPersonalizados = {
+        'Relleno': relleno,
+        'Topping': topping,
+        'Cobertura': cobertura,
+        'Cantidad': '$cantidad ${cantidad == 1 ? 'cupcake' : 'cupcakes'}',
+      };
+
+    // Agregar al carrito
+    cartService.addToCart(
+      producto: widget.product,
+      cantidad: cantidad,
+      configuraciones: [config],
+    );
+
+    // Mostrar mensaje de éxito
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$cantidad ${cantidad == 1 ? 'cupcake' : 'cupcakes'} personalizado agregado al carrito'),
+        backgroundColor: Colors.green,
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+      ),
+    );
+
+    // Opcional: Regresar a la pantalla anterior
+    Navigator.pop(context);
   }
 
   @override
@@ -101,13 +180,13 @@ class _CupcakeDetailScreenState extends State<CupcakeDetailScreen> {
                     _buildCantidadSelector(),
                     const SizedBox(height: 20),
                     _buildDropdown('Relleno', rellenosDisponibles, relleno,
-                        (val) => setState(() => relleno = val!)),
+                        (val) => setState(() => relleno = val!), cargandoRellenos),
                     const SizedBox(height: 20),
                     _buildDropdown('Topping', toppingsDisponibles, topping,
-                        (val) => setState(() => topping = val!)),
+                        (val) => setState(() => topping = val!), cargandoToppings),
                     const SizedBox(height: 20),
                     _buildDropdown('Cobertura', coberturasDisponibles, cobertura,
-                        (val) => setState(() => cobertura = val!)),
+                        (val) => setState(() => cobertura = val!), false),
                     const SizedBox(height: 20),
                     _buildResumenTotal(),
                     const SizedBox(height: 20),
@@ -168,41 +247,31 @@ class _CupcakeDetailScreenState extends State<CupcakeDetailScreen> {
   }
 
   Widget _buildCantidadSelector() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        const Text(
-          '¿Cuántos cupcakes quieres?',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        IconButton(
+          onPressed: () {
+            if (cantidad > 1) {
+              setState(() => cantidad--);
+            }
+          },
+          icon: const Icon(Icons.remove_circle_outline, size: 32),
         ),
-        const SizedBox(height: 10),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            IconButton(
-              onPressed: () {
-                if (cantidad > 1) {
-                  setState(() => cantidad--);
-                }
-              },
-              icon: const Icon(Icons.remove_circle_outline),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.pink[100],
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                '$cantidad ${cantidad == 1 ? 'Cupcake' : 'Cupcakes'}',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-            ),
-            IconButton(
-              onPressed: () => setState(() => cantidad++),
-              icon: const Icon(Icons.add_circle_outline),
-            ),
-          ],
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.pink[100],
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            '$cantidad ${cantidad == 1 ? 'Cupcake' : 'Cupcakes'}',
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+        ),
+        IconButton(
+          onPressed: () => setState(() => cantidad++),
+          icon: const Icon(Icons.add_circle_outline, size: 32),
         ),
       ],
     );
@@ -213,9 +282,10 @@ class _CupcakeDetailScreenState extends State<CupcakeDetailScreen> {
     List<String> items,
     String selectedValue,
     ValueChanged<String?> onChanged,
+    bool isLoading,
   ) {
-    // Validar si la lista está vacía
-    if (items.isEmpty) {
+    // Si está cargando, mostrar indicador
+    if (isLoading) {
       return Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -239,6 +309,33 @@ class _CupcakeDetailScreenState extends State<CupcakeDetailScreen> {
                 'Cargando opciones de $label...',
                 style: const TextStyle(
                   color: Colors.orange,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Si no hay items y no está cargando, mostrar mensaje de error
+    if (items.isEmpty && !isLoading) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.red[50],
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.red[200]!),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.error_outline, color: Colors.red[400]),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'No se pudieron cargar las opciones de $label',
+                style: TextStyle(
+                  color: Colors.red[700],
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -317,7 +414,7 @@ class _CupcakeDetailScreenState extends State<CupcakeDetailScreen> {
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
           GestureDetector(
-            onTap: _handleAddToCart,
+            onTap: _agregarAlCarrito,
             child: Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
@@ -339,21 +436,7 @@ class _CupcakeDetailScreenState extends State<CupcakeDetailScreen> {
     );
   }
 
-  void _handleAddToCart() {
-    List<String> errores = [];
-
-    if (relleno.isEmpty) errores.add('Selecciona un relleno');
-    if (topping.isEmpty) errores.add('Selecciona un topping');
-    if (cobertura.isEmpty) errores.add('Selecciona una cobertura');
-
-    if (errores.isNotEmpty) {
-      _showValidationAlert(errores);
-    } else {
-      _showSuccessAlert();
-    }
-  }
-
-  void _showValidationAlert(List<String> errors) {
+  void _mostrarAlertaValidacion(List<String> errors) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -431,74 +514,6 @@ class _CupcakeDetailScreenState extends State<CupcakeDetailScreen> {
                   ),
                 ],
               ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showSuccessAlert() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        backgroundColor: const Color(0xFFFFF1F6),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 30),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.check_circle_rounded,
-                  size: 60, color: Colors.pink),
-              const SizedBox(height: 10),
-              const Text(
-                '¡Éxito!',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.pinkAccent,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Se ${cantidad == 1 ? 'ha' : 'han'} añadido $cantidad ${cantidad == 1 ? 'cupcake' : 'cupcakes'} al carrito.',
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 15),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Total: \$${_precioTotal().toStringAsFixed(0)}',
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      _resetFormulario();
-                    },
-                    child: const Text(
-                      'Seguir comprando',
-                      style: TextStyle(color: Colors.pinkAccent),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      Navigator.pop(context);
-                    },
-                    child: const Text(
-                      'Volver al inicio',
-                      style: TextStyle(color: Colors.pinkAccent),
-                    ),
-                  ),
-                ],
-              )
             ],
           ),
         ),

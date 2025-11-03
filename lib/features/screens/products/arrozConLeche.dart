@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../models/General_models.dart' as GeneralModels;
 import '../../services/donas_api_services.dart';
+import '../../services/cart_services.dart';
+import '../../models/cart_models.dart';
 
 class ArrozConLecheScreen extends StatefulWidget {
   final String categoryTitle;
@@ -20,6 +23,15 @@ class _ArrozConLecheScreenState extends State<ArrozConLecheScreen> {
   bool isLoading = true;
   String? errorMessage;
 
+  // ✅ FUNCIÓN PARA FORMATEAR PRECIOS CON PUNTOS DE MIL
+  String formatPrice(double price) {
+    final priceStr = price.toStringAsFixed(0);
+    return priceStr.replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (Match m) => '${m[1]}.',
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -34,6 +46,7 @@ class _ArrozConLecheScreenState extends State<ArrozConLecheScreen> {
         errorMessage = null;
       });
 
+      // Obtener productos por categoría ID 6 (Arroz con Leche)
       List<GeneralModels.ProductModel> productos =
           await _apiService.obtenerProductosPorCategoriaId(6);
 
@@ -49,7 +62,7 @@ class _ArrozConLecheScreenState extends State<ArrozConLecheScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(errorMessage!),
-            backgroundColor: Colors.redAccent,
+            backgroundColor: Colors.pinkAccent,
             action: SnackBarAction(
               label: 'Reintentar',
               textColor: Colors.white,
@@ -83,13 +96,36 @@ class _ArrozConLecheScreenState extends State<ArrozConLecheScreen> {
     }
   }
 
+  // ✅ FUNCIÓN PARA AGREGAR AL CARRITO DIRECTAMENTE
   void _addToCart(GeneralModels.ProductModel producto) {
+    final cartService = Provider.of<CartService>(context, listen: false);
+    
+    // Crear configuración básica para el producto
+    final config = ObleaConfiguration()
+      ..tipoOblea = producto.nombreProducto
+      ..precio = producto.precioProducto
+      ..ingredientesPersonalizados = {
+        'Producto': producto.nombreProducto,
+        'Categoría': producto.nombreCategoria ?? 'Arroz con Leche',
+      };
+
+    // Agregar al carrito
+    cartService.addToCart(
+      producto: producto,
+      cantidad: 1,
+      configuraciones: [config],
+    );
+
+    // Mostrar mensaje de éxito
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('${producto.nombreProducto} agregado al carrito'),
-        backgroundColor: Colors.pink,
+        backgroundColor: Colors.green,
         duration: const Duration(seconds: 2),
         behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
       ),
     );
   }
@@ -138,7 +174,7 @@ class _ArrozConLecheScreenState extends State<ArrozConLecheScreen> {
                   const SizedBox(height: 8),
                   if (precio > 0) ...[
                     Text(
-                      '\$${precio.toStringAsFixed(0)}',
+                      '\$${formatPrice(precio)}',
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -147,30 +183,23 @@ class _ArrozConLecheScreenState extends State<ArrozConLecheScreen> {
                     ),
                     const SizedBox(height: 8),
                   ],
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () => _addToCart(producto),
-                      icon: const Icon(Icons.shopping_cart, size: 16),
-                      label: const Text(
-                        'Agregar al carrito',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
+                  // ✅ BOTÓN PARA AGREGAR AL CARRITO DIRECTAMENTE
+                  ElevatedButton.icon(
+                    onPressed: () => _addToCart(producto),
+                    icon: const Icon(Icons.add_shopping_cart, size: 16),
+                    label: const Text(
+                      'Agregar al carrito',
+                      style: TextStyle(fontSize: 16),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.pinkAccent,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(15),
                       ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.pinkAccent,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 10,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: 0,
-                      ),
+                      minimumSize: const Size(0, 30),
                     ),
                   ),
                 ],
@@ -307,7 +336,7 @@ class _ArrozConLecheScreenState extends State<ArrozConLecheScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFFF1F6),
+      backgroundColor: const Color(0xFFFFF5F0),
       appBar: AppBar(
         backgroundColor: Colors.pinkAccent,
         elevation: 0,
@@ -355,6 +384,7 @@ class _ArrozConLecheScreenState extends State<ArrozConLecheScreen> {
             )
           : Column(
               children: [
+                // Barra de búsqueda
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                   child: TextField(
@@ -392,6 +422,7 @@ class _ArrozConLecheScreenState extends State<ArrozConLecheScreen> {
                   ),
                 ),
                 
+                // ✅ BANNER INFORMATIVO
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   padding: const EdgeInsets.all(12),
@@ -402,7 +433,7 @@ class _ArrozConLecheScreenState extends State<ArrozConLecheScreen> {
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.shopping_cart_outlined, color: Colors.pink[600], size: 20),
+                      Icon(Icons.shopping_cart_checkout, color: Colors.pink[600], size: 20),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -418,6 +449,7 @@ class _ArrozConLecheScreenState extends State<ArrozConLecheScreen> {
                   ),
                 ),
                 
+                // Lista/Grid de productos
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -435,7 +467,7 @@ class _ArrozConLecheScreenState extends State<ArrozConLecheScreen> {
                                 crossAxisCount: 2,
                                 crossAxisSpacing: 16,
                                 mainAxisSpacing: 16,
-                                childAspectRatio: 0.68,
+                                childAspectRatio: 0.75,
                               ),
                               itemBuilder: (context, index) {
                                 return _buildCard(filteredProductos[index]);

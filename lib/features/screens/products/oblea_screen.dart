@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../models/General_models.dart' as GeneralModels;
-import '../../services/donas_api_services.dart'; // ← CAMBIO: usar el servicio unificado
+import '../../services/donas_api_services.dart';
 import 'Detail/ObleaDetailScreen.dart';
 import '../../services/cart_services.dart';
 import 'package:provider/provider.dart';
@@ -18,6 +19,9 @@ class ObleaScreen extends StatefulWidget {
 class _ObleaScreenState extends State<ObleaScreen> {
   final TextEditingController _searchController = TextEditingController();
   final ProductoApiService _apiService = ProductoApiService();
+  
+  // Formateador de moneda
+  final NumberFormat currencyFormat = NumberFormat('#,###', 'es_CO');
 
   List<GeneralModels.ProductModel> allProductos = [];
   List<GeneralModels.ProductModel> filteredProductos = [];
@@ -97,6 +101,10 @@ class _ObleaScreenState extends State<ObleaScreen> {
     );
   }
 
+  String _formatPrice(double price) {
+    return '\$${currencyFormat.format(price.round())}';
+  }
+
   Widget _buildCard(GeneralModels.ProductModel producto) {
     final nombre = producto.nombreProducto;
     final imagen = producto.urlImg ?? '';
@@ -144,7 +152,7 @@ class _ObleaScreenState extends State<ObleaScreen> {
                     const SizedBox(height: 8),
                     if (precio > 0) ...[
                       Text(
-                        '\$${precio.toStringAsFixed(0)}',
+                        _formatPrice(precio),
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:provider/provider.dart';
 import '../../../models/General_models.dart' as GeneralModels;
+import '../../../services/cart_services.dart';
+import '../../../models/cart_models.dart';
 
 class DonasDetailScreen extends StatefulWidget {
   final GeneralModels.ProductModel product;
@@ -29,22 +32,17 @@ class _DonasDetailScreenState extends State<DonasDetailScreen> {
   };
 
   List<String> toppingsDisponibles = [];
-  final List<String> salsasDisponibles = [
-    'Fresa',
-    'Mora',
-    'Chocolate',
-    'Lecherita',
-    'Crema de leche',
-    'Chocolate derretido',
-  ];
-
+  List<String> salsasDisponibles = [];
+  
   bool cargandoToppings = false;
+  bool cargandoSalsas = false;
 
   @override
   void initState() {
     super.initState();
     _inicializarCombos();
     _cargarToppingsDesdeAPI();
+    _cargarSalsasDesdeAPI();
   }
 
   void _inicializarCombos() {
@@ -57,7 +55,7 @@ class _DonasDetailScreenState extends State<DonasDetailScreen> {
   Future<void> _cargarToppingsDesdeAPI() async {
     setState(() => cargandoToppings = true);
     try {
-      final resp = await http.get(Uri.parse('https://deliciasoft-backend-i6g9.onrender.com/api/catalogo-adiciones'));
+      final resp = await http.get(Uri.parse('https://deliciasoft-backend-i6g9.onrender.com/api/catalogo-toppings'));
       if (resp.statusCode == 200) {
         final List<dynamic> data = json.decode(resp.body);
         toppingsDisponibles = data
@@ -74,11 +72,86 @@ class _DonasDetailScreenState extends State<DonasDetailScreen> {
     }
   }
 
+  Future<void> _cargarSalsasDesdeAPI() async {
+    setState(() => cargandoSalsas = true);
+    try {
+      final resp = await http.get(Uri.parse('https://deliciasoft-backend-i6g9.onrender.com/api/catalogo-salsas'));
+      if (resp.statusCode == 200) {
+        final List<dynamic> data = json.decode(resp.body);
+        salsasDisponibles = data
+            .where((e) => e['estado'] == true)
+            .map<String>((e) => e['nombre'].toString())
+            .toList();
+      } else {
+        print('Error al cargar salsas: ${resp.statusCode}');
+      }
+    } catch (e) {
+      print('Error al conectar salsas: $e');
+    } finally {
+      setState(() => cargandoSalsas = false);
+    }
+  }
+
   double _precioTotal() {
     return donasConfig.fold<double>(
         0,
         (prev, cfg) =>
             prev + (comboDefaults[cfg.tipoCombo]?.precio ?? 0));
+  }
+
+  void _agregarAlCarrito() {
+    final cartService = Provider.of<CartService>(context, listen: false);
+    
+    final errores = <String>[];
+    for (int i = 0; i < donasConfig.length; i++) {
+      if (donasConfig[i].tipoCombo.isEmpty) {
+        errores.add('Combo ${i + 1}: Debes elegir un tipo de combo.');
+      }
+    }
+    
+    if (errores.isNotEmpty) {
+      _mostrarAlertaValidacion(errores);
+      return;
+    }
+
+    final configuraciones = <ObleaConfiguration>[];
+    
+    for (int i = 0; i < donasConfig.length; i++) {
+      final config = donasConfig[i];
+      final defaults = comboDefaults[config.tipoCombo]!;
+      
+      final obleaConfig = ObleaConfiguration()
+        ..tipoOblea = config.tipoCombo
+        ..precio = defaults.precio
+        ..ingredientesPersonalizados = {
+          'Tipo Combo': config.tipoCombo,
+          'Toppings': config.toppingsSeleccionados.join(', '),
+          'Salsa': config.salsaSeleccionada.isEmpty ? 'Sin salsa' : config.salsaSeleccionada,
+          'Número de Combo': '${i + 1}',
+        };
+
+      configuraciones.add(obleaConfig);
+    }
+
+    cartService.addToCart(
+      producto: widget.product,
+      cantidad: cantidadCombos,
+      configuraciones: configuraciones,
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$cantidadCombos ${cantidadCombos == 1 ? 'combo' : 'combos'} de donas agregado al carrito'),
+        backgroundColor: Colors.green,
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+      ),
+    );
+
+    Navigator.pop(context);
   }
 
   @override
@@ -89,7 +162,7 @@ class _DonasDetailScreenState extends State<DonasDetailScreen> {
         child: Column(
           children: [
             _buildAppBar(),
-            if (cargandoToppings)
+            if (cargandoToppings || cargandoSalsas)
               const Padding(
                 padding: EdgeInsets.all(12),
                 child: CircularProgressIndicator(color: Colors.pinkAccent),
@@ -102,11 +175,11 @@ class _DonasDetailScreenState extends State<DonasDetailScreen> {
                   children: [
                     _buildProductImage(),
                     const SizedBox(height: 12),
-                  Text(
-                    'Personaliza tu combo de mini donas',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w500)),
+                    Text(
+                      'Personaliza tu combo de mini donas',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w500)),
                     const SizedBox(height: 20),
                     _buildComboQuantitySelector(),
                     const SizedBox(height: 20),
@@ -217,31 +290,56 @@ class _DonasDetailScreenState extends State<DonasDetailScreen> {
 
   Widget _buildToppingsSelector(DonaComboConfiguration cfg, DonaComboDefaults df) =>
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('Selecciona tus toppings:',
-            style:
-                TextStyle(fontWeight: FontWeight.bold, color: Colors.pinkAccent)),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          children: toppingsDisponibles.map((t) {
-            final sel = cfg.toppingsSeleccionados.contains(t);
-            final lim = cfg.toppingsSeleccionados.length >= df.maxToppings && !sel;
-            return FilterChip(
-              selected: sel,
-              label: Text(t),
-              onSelected: lim
-                  ? null
-                  : (v) {
-                      setState(() {
-                        if (v) cfg.toppingsSeleccionados.add(t);
-                        else cfg.toppingsSeleccionados.remove(t);
-                      });
-                    },
-              selectedColor: Colors.pinkAccent.withOpacity(0.2),
-              backgroundColor: Colors.grey[100],
-              checkmarkColor: Colors.pinkAccent,
-            );
-          }).toList(),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('Selecciona tus toppings:',
+                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.pinkAccent)),
+            Text('${cfg.toppingsSeleccionados.length}/${df.maxToppings}',
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: cfg.toppingsSeleccionados.length >= df.maxToppings 
+                        ? Colors.red 
+                        : Colors.grey[600])),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Container(
+          constraints: const BoxConstraints(maxHeight: 180),
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey[300]!),
+          ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(12),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: toppingsDisponibles.map((t) {
+                final sel = cfg.toppingsSeleccionados.contains(t);
+                final lim = cfg.toppingsSeleccionados.length >= df.maxToppings && !sel;
+                return FilterChip(
+                  selected: sel,
+                  label: Text(t, style: const TextStyle(fontSize: 13)),
+                  onSelected: lim
+                      ? null
+                      : (v) {
+                          setState(() {
+                            if (v) cfg.toppingsSeleccionados.add(t);
+                            else cfg.toppingsSeleccionados.remove(t);
+                          });
+                        },
+                  selectedColor: Colors.pinkAccent.withOpacity(0.2),
+                  backgroundColor: Colors.grey[100],
+                  checkmarkColor: Colors.pinkAccent,
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                );
+              }).toList(),
+            ),
+          ),
         ),
       ]);
 
@@ -252,18 +350,25 @@ class _DonasDetailScreenState extends State<DonasDetailScreen> {
               style:
                   TextStyle(fontWeight: FontWeight.bold, color: Colors.pinkAccent)),
           const SizedBox(height: 6),
-          DropdownButtonFormField<String>(
-            decoration: _dropdownDecoration('Selecciona una opción'),
-            value:
-                cfg.salsaSeleccionada.isEmpty ? null : cfg.salsaSeleccionada,
-            items: salsasDisponibles
-                .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                .toList(),
-            onChanged: (v) {
-              cfg.salsaSeleccionada = v!;
-              setState(() {});
-            },
-          ),
+          cargandoSalsas
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(12),
+                    child: CircularProgressIndicator(color: Colors.pinkAccent),
+                  ),
+                )
+              : DropdownButtonFormField<String>(
+                  decoration: _dropdownDecoration('Selecciona una opción'),
+                  value:
+                      cfg.salsaSeleccionada.isEmpty ? null : cfg.salsaSeleccionada,
+                  items: salsasDisponibles
+                      .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                      .toList(),
+                  onChanged: (v) {
+                    cfg.salsaSeleccionada = v ?? '';
+                    setState(() {});
+                  },
+                ),
         ],
       );
 
@@ -338,7 +443,7 @@ class _DonasDetailScreenState extends State<DonasDetailScreen> {
           Text('Total: \$${_precioTotal().toStringAsFixed(0)}',
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           GestureDetector(
-            onTap: _handleAddToCart,
+            onTap: _agregarAlCarrito,
             child: Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
@@ -354,21 +459,7 @@ class _DonasDetailScreenState extends State<DonasDetailScreen> {
         ]),
       );
 
-  void _handleAddToCart() {
-    final errores = <String>[];
-    for (int i = 0; i < donasConfig.length; i++) {
-      if (donasConfig[i].tipoCombo.isEmpty) {
-        errores.add('Combo ${i + 1}: Debes elegir un tipo de combo.');
-      }
-    }
-    if (errores.isNotEmpty) {
-      _showValidationAlert(errores);
-    } else {
-      _showSuccessAlert();
-    }
-  }
-
-  void _showValidationAlert(List<String> errores) {
+  void _mostrarAlertaValidacion(List<String> errores) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -383,46 +474,6 @@ class _DonasDetailScreenState extends State<DonasDetailScreen> {
         ],
       ),
     );
-  }
-
-  void _showSuccessAlert() {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('¡Éxito!'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text(
-              'Se ${cantidadCombos == 1 ? 'ha' : 'han'} añadido $cantidadCombos ${cantidadCombos == 1 ? 'combo' : 'combos'} al carrito.'),
-          const SizedBox(height: 8),
-          Text('Total: \$${_precioTotal().toStringAsFixed(0)}',
-              style: const TextStyle(fontWeight: FontWeight.bold)),
-        ]),
-        actions: [
-          TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _resetFormulario();
-              },
-              child: const Text('Seguir comprando')),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pop(context);
-            },
-            child: const Text('Volver al inicio'),
-          )
-        ],
-      ),
-    );
-  }
-
-  void _resetFormulario() {
-    setState(() {
-      cantidadCombos = 1;
-      donasConfig
-        ..clear()
-        ..add(DonaComboConfiguration());
-    });
   }
 }
 

@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/General_models.dart' as GeneralModels;
-import '../../services/donas_api_services.dart'; // ← Usar el servicio unificado
+import '../../services/donas_api_services.dart';
 import 'Detail/TortaDetailScreen.dart';
-import '../../models/product_model.dart';
 
 class TortasScreen extends StatefulWidget {
   final String categoryTitle;
@@ -21,6 +20,15 @@ class _TortasScreenState extends State<TortasScreen> {
   List<GeneralModels.ProductModel> filteredProductos = [];
   bool isLoading = true;
   String? errorMessage;
+
+  // ✅ FUNCIÓN PARA FORMATEAR PRECIOS CON PUNTOS DE MIL
+  String formatPrice(double price) {
+    final priceStr = price.toStringAsFixed(0);
+    return priceStr.replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (Match m) => '${m[1]}.',
+    );
+  }
 
   @override
   void initState() {
@@ -86,7 +94,7 @@ class _TortasScreenState extends State<TortasScreen> {
     }
   }
 
-  void _navigateToDetail(ProductModel producto) {
+  void _navigateToDetail(GeneralModels.ProductModel producto) {
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -106,7 +114,7 @@ class _TortasScreenState extends State<TortasScreen> {
         borderRadius: BorderRadius.circular(20),
       ),
       child: InkWell(
-        onTap: () => _navigateToDetail(ProductModel.fromBackendJson(producto)),
+        onTap: () => _navigateToDetail(producto),
         borderRadius: BorderRadius.circular(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -142,7 +150,8 @@ class _TortasScreenState extends State<TortasScreen> {
                     const SizedBox(height: 8),
                     if (precio > 0) ...[
                       Text(
-                        '\$${precio.toStringAsFixed(0)}',
+                        // ✅ CORREGIDO: Usar formato con puntos de mil
+                        '\$${formatPrice(precio)}',
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,

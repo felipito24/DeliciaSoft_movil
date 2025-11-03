@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
-import '../../../models/product_model.dart';
-import '../../../models/saborModels.dart';
-// import '../../../services/sabor_services.dart';
+import 'package:provider/provider.dart';
+import '../../../models/General_models.dart';
+import '../../../services/cart_services.dart';
+import '../../../models/cart_models.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+
 class PostreDetailScreen extends StatefulWidget {
   final ProductModel product;
 
@@ -53,6 +55,15 @@ class _PostreDetailScreenState extends State<PostreDetailScreen> {
     'Cheesecake (\$6000)',
   ];
 
+  // ✅ FUNCIÓN PARA FORMATEAR PRECIOS CON PUNTOS DE MIL
+  String formatPrice(double price) {
+    final priceStr = price.toStringAsFixed(0);
+    return priceStr.replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (Match m) => '${m[1]}.',
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -68,58 +79,56 @@ class _PostreDetailScreenState extends State<PostreDetailScreen> {
   }
 
   Future<void> _loadSabores() async {
-  try {
-    setState(() {
-      isLoadingSabores = true;
-      errorMessage = '';
-    });
-
-    final response = await http.get(Uri.parse('http://deliciasoft.somee.com/api/CatalogoSabors'));
-
-    if (response.statusCode == 200) {
-      final List<dynamic> jsonData = json.decode(response.body);
+    try {
       setState(() {
-        saboresDisponibles = jsonData;
-        isLoadingSabores = false;
+        isLoadingSabores = true;
+        errorMessage = '';
       });
-    } else {
+
+      final response = await http.get(Uri.parse('https://deliciasoft-backend-i6g9.onrender.com/api/catalogo-sabor'));
+
+      if (response.statusCode == 200) {
+        final List<dynamic> jsonData = json.decode(response.body);
+        setState(() {
+          saboresDisponibles = jsonData;
+          isLoadingSabores = false;
+        });
+      } else {
+        setState(() {
+          isLoadingSabores = false;
+          errorMessage = 'Error al cargar sabores: Código ${response.statusCode}';
+        });
+      }
+    } catch (e) {
       setState(() {
         isLoadingSabores = false;
-        errorMessage = 'Error al cargar sabores: Código ${response.statusCode}';
+        errorMessage = 'Error al cargar sabores: ${e.toString()}';
       });
     }
-  } catch (e) {
-    setState(() {
-      isLoadingSabores = false;
-      errorMessage = 'Error al cargar sabores: ${e.toString()}';
-    });
   }
-}
-
 
   double _getUnitPrice(PostreConfiguration config) {
-  if (config.tipoPostre.isEmpty) return 0;
+    if (config.tipoPostre.isEmpty) return 0;
 
-  final defaults = postreDefaults[config.tipoPostre];
-  double basePrice = defaults?.precio ?? 0;
+    final defaults = postreDefaults[config.tipoPostre];
+    double basePrice = defaults?.precio ?? 0;
 
-  if (config.idSabor != null) {
-    final sabor = saboresDisponibles.firstWhere(
-      (s) => s["idSabor"] == config.idSabor,
-      orElse: () => {
-        "idSabor": 0,
-        "nombre": "",
-        "precioAdicion": 0,
-        "idInsumos": 0,
-        "estado": true,
-      },
-    );
-    basePrice += (sabor["precioAdicion"] ?? 0).toDouble();
+    if (config.idSabor != null) {
+      final sabor = saboresDisponibles.firstWhere(
+        (s) => s["idSabor"] == config.idSabor,
+        orElse: () => {
+          "idSabor": 0,
+          "nombre": "",
+          "precioAdicion": 0,
+          "idInsumos": 0,
+          "estado": true,
+        },
+      );
+      basePrice += (sabor["precioAdicion"] ?? 0).toDouble();
+    }
+
+    return basePrice;
   }
-
-  return basePrice;
-}
-
 
   double get totalPrice {
     double total = 0;
@@ -166,7 +175,7 @@ class _PostreDetailScreenState extends State<PostreDetailScreen> {
                     children: [
                       Icon(
                         Icons.error_outline,
-                        color: Colors.red[400],
+                        color: Colors.pink[400],
                         size: 48,
                       ),
                       const SizedBox(height: 16),
@@ -175,7 +184,7 @@ class _PostreDetailScreenState extends State<PostreDetailScreen> {
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 16,
-                          color: Colors.red[600],
+                          color: Colors.pink[600],
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -217,7 +226,7 @@ class _PostreDetailScreenState extends State<PostreDetailScreen> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              widget.product.title,
+              widget.product.nombreProducto,
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontSize: 20,
@@ -239,7 +248,7 @@ class _PostreDetailScreenState extends State<PostreDetailScreen> {
         _buildProductImage(),
         const SizedBox(height: 12),
         Text(
-          widget.product.description,
+          widget.product.descripcion ?? 'Delicioso postre personalizado',
           textAlign: TextAlign.center,
           style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
         ),
@@ -258,235 +267,275 @@ class _PostreDetailScreenState extends State<PostreDetailScreen> {
   }
 
   Widget _buildPostreConfiguration(int index) {
-  if (index >= postreConfigurations.length) return Container();
+    if (index >= postreConfigurations.length) return Container();
 
-  final config = postreConfigurations[index];
-  final defaults = config.tipoPostre.isNotEmpty ? postreDefaults[config.tipoPostre] : null;
+    final config = postreConfigurations[index];
+    final defaults = config.tipoPostre.isNotEmpty ? postreDefaults[config.tipoPostre] : null;
 
-  return Card(
-    margin: const EdgeInsets.only(bottom: 16),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    elevation: 2,
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Postre ${index + 1}',
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.pinkAccent,
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          _buildDropdown(
-            'Tipo de Postre',
-            config.tipoPostre,
-            tiposPostre,
-            (val) {
-              setState(() {
-                config.tipoPostre = val;
-                config.idSabor = null;
-              });
-            },
-          ),
-
-          if (defaults != null) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.blue[50],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blue[200]!),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Descripción:',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    defaults.descripcion,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: Colors.blue,
-                    ),
-                  ),
-                ],
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Postre ${index + 1}',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.pinkAccent,
               ),
             ),
-          ],
-
-          if (config.tipoPostre.isNotEmpty && saboresDisponibles.isNotEmpty) ...[
             const SizedBox(height: 12),
-            DropdownButtonFormField<int>(
-              decoration: const InputDecoration(labelText: 'Sabor'),
-              value: config.idSabor,
-              items: saboresDisponibles.map<DropdownMenuItem<int>>((sabor) {
-                return DropdownMenuItem<int>(
-                  value: sabor['idSabor'],
-                  child: Text('${sabor['nombre']} (+\$${sabor['precioAdicion']})'),
-                );
-              }).toList(),
-              onChanged: (val) {
+
+            _buildDropdown(
+              'Tipo de Postre',
+              config.tipoPostre,
+              tiposPostre,
+              (val) {
                 setState(() {
-                  config.idSabor = val;
+                  config.tipoPostre = val;
+                  config.idSabor = null;
                 });
               },
             ),
-          ],
 
-          const SizedBox(height: 12),
-
-          if (config.tipoPostre.isNotEmpty && saboresDisponibles.isNotEmpty) ...[
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.purple[50],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.purple[200]!),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Sabores disponibles:',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.purple,
+            if (defaults != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue[200]!),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Descripción:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: saboresDisponibles.map((sabor) {
-                      final selected = config.idSabor == sabor['idSabor'];
-                      return GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            config.idSabor = sabor['idSabor'];
-                          });
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: selected ? Colors.purple[200] : Colors.purple[100],
-                            borderRadius: BorderRadius.circular(12),
-                            border: selected ? Border.all(color: Colors.purple[400]!, width: 2) : null,
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                sabor['nombre'],
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: selected ? FontWeight.bold : FontWeight.w500,
-                                  color: Colors.purple,
-                                ),
-                              ),
-                              if ((sabor['precioAdicion'] ?? 0) > 0)
+                    const SizedBox(height: 4),
+                    Text(
+                      defaults.descripcion,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.blue,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            if (config.tipoPostre.isNotEmpty && saboresDisponibles.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _buildSaborDropdown(config),
+            ],
+
+            const SizedBox(height: 12),
+
+            if (config.tipoPostre.isNotEmpty && saboresDisponibles.isNotEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.purple[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.pink[200]!),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Sabores disponibles:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.pink,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: saboresDisponibles.map((sabor) {
+                        final selected = config.idSabor == sabor['idSabor'];
+                        return GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              config.idSabor = sabor['idSabor'];
+                            });
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: selected ? Colors.pink[200] : Colors.pink[100],
+                              borderRadius: BorderRadius.circular(12),
+                              border: selected ? Border.all(color: Colors.pink[400]!, width: 2) : null,
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
                                 Text(
-                                  '+\$${(sabor['precioAdicion']).toString()}',
+                                  sabor['nombre'],
                                   style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.orange[700],
+                                    fontSize: 12,
+                                    fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+                                    color: Colors.pink,
                                   ),
                                 ),
-                            ],
+                                if ((sabor['precioAdicion'] ?? 0) > 0)
+                                  Text(
+                                    '+\$${(sabor['precioAdicion']).toString()}',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.pink[700],
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ],
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
 
-          const SizedBox(height: 8),
+            const SizedBox(height: 8),
 
-          if (config.tipoPostre.isNotEmpty)
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.green[50],
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Precio Base: \$${(defaults?.precio ?? 0).toStringAsFixed(0)}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: Colors.green,
-                          fontSize: 14,
-                        ),
-                      ),
-                      if (config.idSabor != null)
+            if (config.tipoPostre.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.green[50],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Text(
-                          'Adición Sabor: +\$${_getSaborPrecioAdicion(config.idSabor!).toStringAsFixed(0)}',
+                          'Precio Base: \$${(defaults?.precio ?? 0).toStringAsFixed(0)}',
                           style: const TextStyle(
                             fontWeight: FontWeight.w600,
-                            color: Colors.orange,
-                            fontSize: 12,
+                            color: Colors.green,
+                            fontSize: 14,
                           ),
                         ),
-                      Text(
-                        'Total: \$${_getUnitPrice(config).toStringAsFixed(0)}',
-                        style: const TextStyle(
+                        if (config.idSabor != null)
+                          Text(
+                            'Adición Sabor: +\$${_getSaborPrecioAdicion(config.idSabor!).toStringAsFixed(0)}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: Colors.pink,
+                              fontSize: 12,
+                            ),
+                          ),
+                        Text(
+                          'Total: \$${formatPrice(_getUnitPrice(config))}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.pink[100],
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text(
+                        'Precio Variable',
+                        style: TextStyle(
+                          fontSize: 12,
                           fontWeight: FontWeight.bold,
-                          color: Colors.green,
-                          fontSize: 16,
+                          color: Colors.pink,
                         ),
                       ),
-                    ],
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.orange[100],
-                      borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Text(
-                      'Precio Variable',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.orange,
-                      ),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
-    ),
-  );
-}
-double _getSaborPrecioAdicion(int idSabor) {
-  final sabor = saboresDisponibles.firstWhere(
-    (s) => s["idSabor"] == idSabor,
-    orElse: () => {"precioAdicion": 0},
-  );
-  return (sabor["precioAdicion"] ?? 0).toDouble();
-}
+    );
+  }
+
+  Widget _buildSaborDropdown(PostreConfiguration config) {
+    return DropdownButtonFormField<int>(
+      decoration: InputDecoration(
+        labelText: 'Sabor',
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
+      ),
+      value: config.idSabor,
+      items: saboresDisponibles.map<DropdownMenuItem<int>>((sabor) {
+        return DropdownMenuItem<int>(
+          value: sabor['idSabor'],
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  sabor['nombre'],
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if ((sabor['precioAdicion'] ?? 0) > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.pink[100],
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '+\$${(sabor['precioAdicion']).toString()}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.pink,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      }).toList(),
+      onChanged: (val) {
+        setState(() {
+          config.idSabor = val;
+        });
+      },
+    );
+  }
+
+  double _getSaborPrecioAdicion(int idSabor) {
+    final sabor = saboresDisponibles.firstWhere(
+      (s) => s["idSabor"] == idSabor,
+      orElse: () => {"precioAdicion": 0},
+    );
+    return (sabor["precioAdicion"] ?? 0).toDouble();
+  }
 
   Widget _buildProductImage() {
     return Card(
@@ -495,7 +544,7 @@ double _getSaborPrecioAdicion(int idSabor) {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
         child: Image.network(
-          widget.product.imageUrl,
+          widget.product.urlImg ?? '',
           height: 200,
           fit: BoxFit.cover,
           errorBuilder: (_, __, ___) =>
@@ -569,7 +618,7 @@ double _getSaborPrecioAdicion(int idSabor) {
         ],
       ),
       child: Text(
-        'Total: \$${totalPrice.toStringAsFixed(0)}',
+        'Total: \$${formatPrice(totalPrice)}',
         style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
       ),
     );
@@ -586,7 +635,7 @@ double _getSaborPrecioAdicion(int idSabor) {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
-            'Total: \$${totalPrice.toStringAsFixed(0)}',
+            'Total: \$${formatPrice(totalPrice)}',
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
           GestureDetector(
@@ -612,81 +661,50 @@ double _getSaborPrecioAdicion(int idSabor) {
       Function(String) onChanged) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
-      child: DropdownButtonFormField<String>(
-        value: currentValue.isEmpty ? null : currentValue,
-        decoration: InputDecoration(
-          labelText: label,
-          filled: true,
-          fillColor: Colors.white,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide.none,
-          ),
-        ),
-        icon: const Icon(Icons.keyboard_arrow_down_rounded),
-        items: options
-            .map((item) => DropdownMenuItem(value: item, child: Text(item)))
-            .toList(),
-        onChanged: (val) => val != null ? onChanged(val) : null,
-      ),
-    );
-  }
-
-  Widget _buildSaborDropdown(String label, int? currentValue, List<SaborModel> sabores,
-      Function(int?) onChanged) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: DropdownButtonFormField<int>(
-        value: currentValue,
-        decoration: InputDecoration(
-          labelText: label,
-          filled: true,
-          fillColor: Colors.white,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide.none,
-          ),
-        ),
-        icon: const Icon(Icons.keyboard_arrow_down_rounded),
-        items: sabores.map((sabor) {
-          return DropdownMenuItem<int>(
-            value: sabor.idSabor,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    sabor.nombre,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (sabor.precioAdicion > 0)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.orange[100],
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      '+\$${sabor.precioAdicion.toStringAsFixed(0)}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.orange,
-                      ),
-                    ),
-                  ),
-              ],
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: const [
+            BoxShadow(
+              color: Color.fromARGB(20, 0, 0, 0),
+              blurRadius: 6,
+              offset: Offset(0, 3),
             ),
-          );
-        }).toList(),
-        onChanged: onChanged,
+          ],
+        ),
+        child: DropdownButtonFormField<String>(
+          value: currentValue.isEmpty ? null : currentValue,
+          decoration: InputDecoration(
+            labelText: label,
+            labelStyle: const TextStyle(
+              color: Color.fromARGB(255, 175, 76, 130),
+              fontWeight: FontWeight.w600,
+            ),
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none,
+            ),
+          ),
+          icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.pinkAccent),
+          dropdownColor: Colors.white,
+          style: const TextStyle(
+            color: Colors.black87,
+            fontSize: 16,
+          ),
+          items: options
+              .map((item) => DropdownMenuItem(value: item, child: Text(item)))
+              .toList(),
+          onChanged: (val) => val != null ? onChanged(val) : null,
+        ),
       ),
     );
   }
 
+  // ✅ FUNCIÓN CORREGIDA PARA AÑADIR AL CARRITO
   void _handleAddToCart() {
     List<String> errors = [];
     
@@ -707,7 +725,39 @@ double _getSaborPrecioAdicion(int idSabor) {
       return;
     }
 
-    // Aquí agregarías los postres al carrito.
+    // ✅ CORREGIDO: Usar el mismo método que en ObleaDetailScreen
+    final cartService = Provider.of<CartService>(context, listen: false);
+
+    // Para cada postre, crear una configuración similar a las obleas
+    for (int i = 0; i < postreConfigurations.length; i++) {
+      final config = postreConfigurations[i];
+      final unitPrice = _getUnitPrice(config);
+      
+      // Obtener nombre del sabor
+      final sabor = saboresDisponibles.firstWhere(
+        (s) => s["idSabor"] == config.idSabor,
+        orElse: () => {"nombre": "Desconocido"},
+      );
+      
+      // Crear configuración similar a ObleaConfiguration
+      final postreConfig = ObleaConfiguration()
+        ..tipoOblea = '${config.tipoPostre} - ${sabor["nombre"]}'
+        ..precio = unitPrice
+        ..ingredientesPersonalizados = {
+          'Tipo de Postre': config.tipoPostre,
+          'Sabor': sabor["nombre"],
+          'Precio Base': (postreDefaults[config.tipoPostre]?.precio ?? 0).toString(),
+          'Adición Sabor': _getSaborPrecioAdicion(config.idSabor!).toString(),
+        };
+
+      // ✅ CORREGIDO: Usar el mismo método que en obleas
+      cartService.addToCart(
+        producto: widget.product,
+        cantidad: 1, // Cada postre es un item separado
+        configuraciones: [postreConfig],
+      );
+    }
+
     _showSuccessAlert();
   }
 
@@ -738,7 +788,7 @@ double _getSaborPrecioAdicion(int idSabor) {
                 ),
                 child: Icon(
                   Icons.error_outline,
-                  color: Colors.red[600],
+                  color: Colors.pink[600],
                   size: 30,
                 ),
               ),
@@ -748,7 +798,7 @@ double _getSaborPrecioAdicion(int idSabor) {
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
-                  color: Colors.red,
+                  color: Colors.pink,
                 ),
               ),
               const SizedBox(height: 12),
@@ -778,7 +828,7 @@ double _getSaborPrecioAdicion(int idSabor) {
                   ElevatedButton(
                     onPressed: () => Navigator.pop(context),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
+                      backgroundColor: Colors.pink,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -844,7 +894,7 @@ double _getSaborPrecioAdicion(int idSabor) {
               ),
               const SizedBox(height: 8),
               Text(
-                'Total: \$${totalPrice.toStringAsFixed(0)}',
+                'Total: \$${formatPrice(totalPrice)}',
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -907,30 +957,6 @@ class PostreConfiguration {
   int? idSabor;
   
   PostreConfiguration();
-  
-  // Método para obtener el nombre del sabor
-  String getSaborNombre(List<SaborModel> sabores) {
-    if (idSabor == null) return '';
-    
-    try {
-      final sabor = sabores.firstWhere((s) => s.idSabor == idSabor);
-      return sabor.nombre;
-    } catch (e) {
-      return '';
-    }
-  }
-  
-  // Método para obtener el precio adicional del sabor
-  double getSaborPrecioAdicion(List<SaborModel> sabores) {
-    if (idSabor == null) return 0.0;
-    
-    try {
-      final sabor = sabores.firstWhere((s) => s.idSabor == idSabor);
-      return sabor.precioAdicion;
-    } catch (e) {
-      return 0.0;
-    }
-  }
 }
 
 class PostreDefaults {

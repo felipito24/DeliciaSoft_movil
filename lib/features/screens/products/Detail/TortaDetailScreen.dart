@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
-import '../../../models/product_model.dart';
+import 'package:provider/provider.dart';
+import '../../../models/General_models.dart';
+import '../../../services/cart_services.dart';
+import '../../../models/cart_models.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-
-// import '../../../models/relleno_models.dart';
-// import '../../../models/torta_configuration.dart';
-// import '../../../services/relleno_services.dart';
 
 class TortaDetailScreen extends StatefulWidget {
   final ProductModel product;
@@ -18,28 +17,33 @@ class TortaDetailScreen extends StatefulWidget {
 
 class _TortaDetailScreenState extends State<TortaDetailScreen> {
   int quantity = 1;
-  
-
   List<TortaConfiguration> tortaConfigurations = [];
-
   List<String> rellenos = [];
-List<String> sabores = [];
+  List<String> sabores = [];
+  bool isLoadingData = true;
 
-String? selectedRelleno;
-String? selectedSabor;
+  String formatPrice(double price) {
+    final priceStr = price.toStringAsFixed(0);
+    return priceStr.replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (Match m) => '${m[1]}.',
+    );
+  }
 
-  final List<String> tiposVenta = ['Por Porciones', 'Por Libra'];
-
-  // Precios base
+  // ✅ MAPEO MEJORADO: Incluye más variaciones de nombres
   final Map<String, double> preciosPorPorcion = {
     'Chocolate': 3500,
     'Vainilla': 3000,
     'Fresa': 3200,
     'Red Velvet': 4000,
+    'Red velvet': 4000,
     'Zanahoria': 3800,
     'Tres Leches': 4200,
     'Moka': 4000,
     'Limón': 3200,
+    'Maracuyá': 4500,
+    'Postre Maracuyá': 4500,
+    'Postre de Maracuyá': 4500,
   };
 
   final Map<String, double> preciosPorLibra = {
@@ -47,41 +51,89 @@ String? selectedSabor;
     'Vainilla': 12000,
     'Fresa': 13000,
     'Red Velvet': 18000,
+    'Red velvet': 18000,
     'Zanahoria': 16000,
     'Tres Leches': 20000,
     'Moka': 18000,
     'Limón': 13000,
+    'Maracuyá': 20000,
+    'Postre Maracuyá': 20000,
+    'Postre de Maracuyá': 20000,
   };
-Future<void> fetchRellenos() async {
-  final response = await http.get(Uri.parse('https://deliciasoft-backend-i6g9.onrender.com/api/catalogo-relleno'));
-  if (response.statusCode == 200) {
-    final List<dynamic> data = jsonDecode(response.body);
-    setState(() {
-      rellenos = data.map((item) => item['nombre'] as String).toList();
-    });
-  } else {
-    print('Error al cargar rellenos');
-  }
-}
 
-Future<void> fetchSabores() async {
-  final response = await http.get(Uri.parse('https://deliciasoft-backend-i6g9.onrender.com/api/catalogo-sabor'));
-  if (response.statusCode == 200) {
-    final List<dynamic> data = jsonDecode(response.body);
-    setState(() {
-      sabores = data.map((item) => item['nombre'] as String).toList();
-    });
-  } else {
-    print('Error al cargar sabores');
+  Future<void> fetchRellenos() async {
+    try {
+      final response = await http.get(Uri.parse('https://deliciasoft-backend-i6g9.onrender.com/api/catalogo-relleno'));
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        final List<String> rellenosUnicos = [];
+        final Set<String> rellenosSet = <String>{};
+        
+        for (var item in data) {
+          final String nombre = item['nombre'] as String;
+          if (!rellenosSet.contains(nombre)) {
+            rellenosSet.add(nombre);
+            rellenosUnicos.add(nombre);
+          }
+        }
+        
+        if (mounted) {
+          setState(() {
+            rellenos = rellenosUnicos;
+          });
+        }
+      }
+    } catch (e) {
+      print('Excepción al cargar rellenos: $e');
+    }
   }
-}
+
+  Future<void> fetchSabores() async {
+    try {
+      final response = await http.get(Uri.parse('https://deliciasoft-backend-i6g9.onrender.com/api/catalogo-sabor'));
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        final List<String> saboresUnicos = [];
+        final Set<String> saboresSet = <String>{};
+        
+        for (var item in data) {
+          final String nombre = item['nombre'] as String;
+          if (!saboresSet.contains(nombre)) {
+            saboresSet.add(nombre);
+            saboresUnicos.add(nombre);
+          }
+        }
+        
+        if (mounted) {
+          setState(() {
+            sabores = saboresUnicos;
+          });
+        }
+      }
+    } catch (e) {
+      print('Excepción al cargar sabores: $e');
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-    fetchRellenos();
-  fetchSabores();
-    _initializeConfigurations();
+    _initializeData();
+  }
+
+  // ✅ INICIALIZACIÓN MEJORADA: Espera a que se carguen los datos de la API
+  Future<void> _initializeData() async {
+    await Future.wait([
+      fetchRellenos(),
+      fetchSabores(),
+    ]);
+    
+    if (mounted) {
+      setState(() {
+        _initializeConfigurations();
+        isLoadingData = false;
+      });
+    }
   }
 
   void _initializeConfigurations() {
@@ -89,6 +141,42 @@ Future<void> fetchSabores() async {
       quantity, 
       (index) => TortaConfiguration()
     );
+    
+    // ✅ ASIGNAR VALORES POR DEFECTO
+    for (var config in tortaConfigurations) {
+      // Sabor por defecto: nombre del producto
+      config.sabor = widget.product.nombreProducto;
+      
+      // Relleno por defecto: primero de la lista
+      if (rellenos.isNotEmpty) {
+        config.relleno = rellenos.first;
+      }
+      
+      // Tipo de venta por defecto
+      config.tipoVenta = 'Por Porciones';
+      config.porciones = 1;
+    }
+  }
+
+  // ✅ FUNCIÓN MEJORADA: Busca el precio con normalización
+  double _getPrecioBase(String sabor, bool esPorPorcion) {
+    final mapa = esPorPorcion ? preciosPorPorcion : preciosPorLibra;
+    
+    // Buscar coincidencia exacta primero
+    if (mapa.containsKey(sabor)) {
+      return mapa[sabor]!;
+    }
+    
+    // Buscar coincidencia sin considerar mayúsculas/minúsculas
+    for (var key in mapa.keys) {
+      if (key.toLowerCase() == sabor.toLowerCase()) {
+        return mapa[key]!;
+      }
+    }
+    
+    // Si no encuentra, usar precio por defecto de Vainilla
+    print('⚠️ Precio no encontrado para: $sabor, usando precio de Vainilla');
+    return mapa['Vainilla'] ?? (esPorPorcion ? 3000 : 12000);
   }
 
   double _getUnitPrice(TortaConfiguration config) {
@@ -97,10 +185,10 @@ Future<void> fetchSabores() async {
     double basePrice = 0;
     
     if (config.tipoVenta == 'Por Porciones') {
-      basePrice = preciosPorPorcion[config.sabor] ?? 0;
+      basePrice = _getPrecioBase(config.sabor, true);
       basePrice *= config.porciones;
     } else {
-      basePrice = preciosPorLibra[config.sabor] ?? 0;
+      basePrice = _getPrecioBase(config.sabor, false);
       basePrice *= config.libras;
     }
 
@@ -130,10 +218,21 @@ Future<void> fetchSabores() async {
           children: [
             _buildAppBar(),
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: _buildFormContent(),
-              ),
+              child: isLoadingData
+                  ? const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(color: Colors.pinkAccent),
+                          SizedBox(height: 16),
+                          Text('Cargando opciones...'),
+                        ],
+                      ),
+                    )
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: _buildFormContent(),
+                    ),
             ),
           ],
         ),
@@ -154,7 +253,7 @@ Future<void> fetchSabores() async {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              widget.product.title,
+              widget.product.nombreProducto,
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontSize: 20,
@@ -176,7 +275,7 @@ Future<void> fetchSabores() async {
         _buildProductImage(),
         const SizedBox(height: 12),
         Text(
-          widget.product.description,
+          widget.product.descripcion ?? 'Deliciosa torta personalizada',
           textAlign: TextAlign.center,
           style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
         ),
@@ -218,7 +317,6 @@ Future<void> fetchSabores() async {
             ),
             const SizedBox(height: 12),
             
-
             _buildDropdown(
               'Sabor de la Torta',
               config.sabor,
@@ -230,7 +328,6 @@ Future<void> fetchSabores() async {
               },
             ),
             
-
             _buildDropdown(
               'Relleno',
               config.relleno,
@@ -242,11 +339,10 @@ Future<void> fetchSabores() async {
               },
             ),
             
-
             _buildDropdown(
               'Tipo de Venta',
               config.tipoVenta,
-              tiposVenta,
+              ['Por Porciones', 'Por Libra'],
               (val) {
                 setState(() {
                   config.tipoVenta = val;
@@ -262,7 +358,7 @@ Future<void> fetchSabores() async {
             const SizedBox(height: 8),
             if (config.sabor.isNotEmpty && config.tipoVenta.isNotEmpty)
               Container(
-                padding: const EdgeInsets.all(8),
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: Colors.green[50],
                   borderRadius: BorderRadius.circular(8),
@@ -271,7 +367,7 @@ Future<void> fetchSabores() async {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Precio: \$${_getUnitPrice(config).toStringAsFixed(0)}',
+                      'Precio: \$${formatPrice(_getUnitPrice(config))}',
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         color: Colors.green,
@@ -392,7 +488,7 @@ Future<void> fetchSabores() async {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
         child: Image.network(
-          widget.product.imageUrl,
+          widget.product.urlImg ?? '',
           height: 200,
           fit: BoxFit.cover,
           errorBuilder: (_, __, ___) =>
@@ -440,7 +536,14 @@ Future<void> fetchSabores() async {
               onPressed: () {
                 setState(() {
                   quantity++;
-                  tortaConfigurations.add(TortaConfiguration());
+                  final newConfig = TortaConfiguration();
+                  newConfig.sabor = widget.product.nombreProducto;
+                  newConfig.tipoVenta = 'Por Porciones';
+                  newConfig.porciones = 1;
+                  if (rellenos.isNotEmpty) {
+                    newConfig.relleno = rellenos.first;
+                  }
+                  tortaConfigurations.add(newConfig);
                 });
               },
             ),
@@ -466,8 +569,8 @@ Future<void> fetchSabores() async {
         ],
       ),
       child: Text(
-        'Total: \$${totalPrice.toStringAsFixed(0)}',
-        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        'Total: \$${formatPrice(totalPrice)}',
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
       ),
     );
   }
@@ -483,7 +586,7 @@ Future<void> fetchSabores() async {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
-            'Total: \$${totalPrice.toStringAsFixed(0)}',
+            'Total: \$${formatPrice(totalPrice)}',
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
           GestureDetector(
@@ -506,51 +609,79 @@ Future<void> fetchSabores() async {
   }
 
   Widget _buildDropdown(String label, String currentValue, List<String> options,
-    Function(String) onChanged) {
-  return Padding(
-    padding: const EdgeInsets.symmetric(vertical: 6),
-    child: Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: const [
-          BoxShadow(
-            color: Color.fromARGB(20, 0, 0, 0),
-            blurRadius: 6,
-            offset: Offset(0, 3),
-          ),
-        ],
-      ),
-      child: DropdownButtonFormField<String>(
-        value: currentValue.isEmpty ? null : currentValue,
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: const TextStyle(
-            color: Color.fromARGB(255, 175, 76, 130),
-            fontWeight: FontWeight.w600,
-          ),
-          filled: true,
-          fillColor: Colors.white,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide.none,
-          ),
+      Function(String) onChanged) {
+    
+    final uniqueOptions = options.toSet().toList();
+    
+    // ✅ Si el dropdown es de sabor, asegurar que el nombre del producto esté en las opciones
+    if (label == 'Sabor de la Torta') {
+      final nombreProducto = widget.product.nombreProducto;
+      if (!uniqueOptions.contains(nombreProducto)) {
+        uniqueOptions.insert(0, nombreProducto);
+      }
+    }
+    
+    String? dropdownValue;
+    if (currentValue.isEmpty && uniqueOptions.isNotEmpty) {
+      dropdownValue = uniqueOptions.first;
+    } else if (currentValue.isNotEmpty) {
+      dropdownValue = currentValue;
+    } else {
+      dropdownValue = null;
+    }
+    
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: const [
+            BoxShadow(
+              color: Color.fromARGB(20, 0, 0, 0),
+              blurRadius: 6,
+              offset: Offset(0, 3),
+            ),
+          ],
         ),
-        icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.pinkAccent),
-        dropdownColor: Colors.white,
-        style: const TextStyle(
-          color: Colors.black87,
-          fontSize: 16,
+        child: DropdownButtonFormField<String>(
+          value: dropdownValue,
+          decoration: InputDecoration(
+            labelText: label,
+            labelStyle: const TextStyle(
+              color: Color.fromARGB(255, 175, 76, 130),
+              fontWeight: FontWeight.w600,
+            ),
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none,
+            ),
+          ),
+          icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.pinkAccent),
+          dropdownColor: Colors.white,
+          style: const TextStyle(
+            color: Colors.black87,
+            fontSize: 16,
+          ),
+          items: uniqueOptions
+              .map((item) => DropdownMenuItem(
+                    value: item,
+                    child: Text(item),
+                  ))
+              .toList(),
+          onChanged: (val) {
+            if (val != null) {
+              onChanged(val);
+            }
+          },
         ),
-        items: options
-            .map((item) => DropdownMenuItem(value: item, child: Text(item)))
-            .toList(),
-        onChanged: (val) => val != null ? onChanged(val) : null,
       ),
-    ),
-  );
-}
+    );
+  }
+
   void _handleAddToCart() {
     List<String> errors = [];
     
@@ -575,7 +706,32 @@ Future<void> fetchSabores() async {
       return;
     }
 
-    // Aquí agregarías las tortas al carrito.
+    final cartService = Provider.of<CartService>(context, listen: false);
+
+    for (int i = 0; i < tortaConfigurations.length; i++) {
+      final config = tortaConfigurations[i];
+      final unitPrice = _getUnitPrice(config);
+      
+      final tortaConfig = ObleaConfiguration()
+        ..tipoOblea = 'Torta ${config.sabor} con ${config.relleno}'
+        ..precio = unitPrice
+        ..ingredientesPersonalizados = {
+          'Sabor': config.sabor,
+          'Relleno': config.relleno,
+          'Tipo de Venta': config.tipoVenta,
+          if (config.tipoVenta == 'Por Porciones')
+            'Porciones': config.porciones.toString(),
+          if (config.tipoVenta == 'Por Libra')
+            'Libras': config.libras.toString(),
+        };
+
+      cartService.addToCart(
+        producto: widget.product,
+        cantidad: 1,
+        configuraciones: [tortaConfig],
+      );
+    }
+
     _showSuccessAlert();
   }
 
@@ -640,22 +796,17 @@ Future<void> fetchSabores() async {
                 ),
               ),
               const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    ),
-                    child: const Text('Entendido'),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                ],
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                ),
+                child: const Text('Entendido'),
               ),
             ],
           ),
@@ -677,7 +828,7 @@ Future<void> fetchSabores() async {
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Colors.green[50]!, const Color.fromARGB(255, 230, 200, 227)!],
+              colors: [Colors.green[50]!, const Color.fromARGB(255, 230, 200, 227)],
             ),
           ),
           child: Column(
@@ -689,9 +840,9 @@ Future<void> fetchSabores() async {
                   color: Colors.green[100],
                   shape: BoxShape.circle,
                 ),
-                child: Icon(
+                child: const Icon(
                   Icons.check_circle_outline,
-                  color: const Color.fromARGB(255, 160, 67, 112),
+                  color: Color.fromARGB(255, 160, 67, 112),
                   size: 40,
                 ),
               ),
@@ -712,7 +863,7 @@ Future<void> fetchSabores() async {
               ),
               const SizedBox(height: 8),
               Text(
-                'Total: \$${totalPrice.toStringAsFixed(0)}',
+                'Total: \$${formatPrice(totalPrice)}',
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -766,7 +917,22 @@ Future<void> fetchSabores() async {
     setState(() {
       quantity = 1;
       tortaConfigurations = [TortaConfiguration()];
+      
+      if (tortaConfigurations.isNotEmpty) {
+        tortaConfigurations[0].sabor = widget.product.nombreProducto;
+        tortaConfigurations[0].tipoVenta = 'Por Porciones';
+        tortaConfigurations[0].porciones = 1;
+        
+        if (rellenos.isNotEmpty) {
+          tortaConfigurations[0].relleno = rellenos.first;
+        }
+      }
     });
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
   }
 }
 
